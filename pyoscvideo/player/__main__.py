@@ -22,7 +22,7 @@ import sys
 import os.path
 import argparse
 import glob
-
+import time
 import vlc
 
 from threading import Thread, Timer
@@ -77,7 +77,7 @@ class VideoPlayer(QObject):
         elif sys.platform == "win32":  # for Windows
             self.mediaplayer.set_hwnd(self.frame.winId())
         elif sys.platform == "darwin":  # for MacOS
-            self.mediaplayer.set_nsobject(int(frame.winId()))
+            self.mediaplayer.set_nsobject(int(self.frame.winId()))
         self.mediaplayer.play()
         self.mediaplayer.set_pause(True)
 
@@ -107,7 +107,9 @@ class Player(QMainWindow):
     """
     def __init__(self, address='127.0.0.1', port=57221, use_osc=True):
         QMainWindow.__init__(self)
-        self.setWindowTitle("pyOscVideo Player")
+        self.setWindowTitle(f"pyOscVideo Player {port}")
+        self.port = port
+        self.device_name = None
 
         self.use_osc = use_osc
         self.instance = vlc.Instance()
@@ -130,6 +132,8 @@ class Player(QMainWindow):
             self.osc_server.add_video_message.connect(self.add_video)
             self.osc_server.clean_message.connect(self.clean)
             self.osc_server.set_time_message.connect(self.set_time)
+            self.osc_server.set_channel_message.connect(self.set_audio_channel)
+            self.osc_server.set_volume_message.connect(self.set_volume)
             self.osc_server.start()
 
     @property
@@ -175,7 +179,7 @@ class Player(QMainWindow):
             self.position_slider.sliderMoved.connect(
                     lambda value: self.set_time(
                         int((value/10000)*self._max_length)))
-            self.position_slider.setSingleStep(0.1)
+            self.position_slider.setSingleStep(1)
             self.gridlayout.addWidget(self.load_button, 0, 0)
             self.gridlayout.addWidget(self.play_button, 0, 1)
             self.gridlayout.addWidget(self.position_slider, 1, 0, 1, -1)
@@ -256,6 +260,16 @@ class Player(QMainWindow):
         """
         for video in self.videos:
             video.mediaplayer.play()
+        if self.device_name is not None:
+            device = video.mediaplayer.audio_output_device_enum()
+            while device:
+                print(device.contents.description)
+                if device.contents.description == self.device_name:
+                    self.setWindowTitle(f"pyOscVideo Player {self.port} {self.device_name.decode()}")
+
+                    video.mediaplayer.audio_output_device_set(None, device.contents.device)
+                    break
+                device = device.contents.next            
         self._is_playing = True
 
     def pause(self):
@@ -273,6 +287,24 @@ class Player(QMainWindow):
         for video in self.videos:
             video.mediaplayer.set_time(time)
 
+    def set_audio_channel(self, channel):
+        """
+        Sets the audio channel to play.
+        """
+        device_names = {1: b'ucx12', 2: b'ucx12', 3: b'ucx34', 4: b'ucx34', 5: b'ucx56', 6: b'ucx56', 7: b'ucx78', 8: b'ucx78', 
+                        9: b'ucx910', 10: b'ucx910', 11: b'ucx1112', 12: b'ucx1112', 13: b'ucx1314', 14: b'ucx1314', 15: b'ucx1516', 16: b'ucx1516',}
+        self.device_name = device_names[channel]
+
+    def set_volume(self, volume):
+        """
+        Sets the volume of all videos.
+        """
+        for video in self.videos:
+            video.mediaplayer.audio_set_volume(volume)
+        self.setWindowTitle(f"pyOscVideo Player {self.port} {self.device_name.decode()} {volume}")
+
+
+
 
 class OSCServer(QThread):
     """
@@ -283,6 +315,8 @@ class OSCServer(QThread):
     pause_message = pyqtSignal()
     clean_message = pyqtSignal()
     set_time_message = pyqtSignal(int)
+    set_channel_message = pyqtSignal(int)
+    set_volume_message = pyqtSignal(int)
 
     def __init__(self, address="localhost", port=57221):
         self.address = address
@@ -295,7 +329,7 @@ class OSCServer(QThread):
 
     def add_folder(self, address, folderpath):
         # Emits the add_video_message signal for each file in video folder
-        videos = glob.glob(os.path.join(folderpath, "*.mov"))
+        videos = glob.glob(os.path.join(folderpath, "*.mp4"))
         for video in videos:
             self.add_video_message.emit(video)
 
@@ -315,6 +349,14 @@ class OSCServer(QThread):
         # Emits the clean_message signal
         self.clean_message.emit()
 
+    def set_audio_channel(self, address, channel):
+        # Emits the set_audio_channel signal
+        self.set_channel_message.emit(channel)
+
+    def set_volume(self, address, volume):
+        # Emits the set_volume signal
+        self.set_volume_message.emit(volume)
+
     def run(self):
         """
         Initialize the OSC server and starts serving.
@@ -326,6 +368,8 @@ class OSCServer(QThread):
         dispatcher.map("/oscVideo/loadFile", self.add_video)
         dispatcher.map("/oscVideo/loadFolder", self.add_folder)
         dispatcher.map("/oscVideo/clean", self.clean)
+        dispatcher.map("/oscVideo/setAudioChannel", self.set_audio_channel)
+        dispatcher.map("/oscVideo/setVolume", self.set_volume)
 
         server = BlockingOSCUDPServer((self.address, self.port), dispatcher)
         server.serve_forever()
@@ -343,7 +387,7 @@ def main_player():
                         help="Disables OSC controller, enable GUI controls")
     parsed_args, unparsed_args = parser.parse_known_args()
     app = QApplication(sys.argv)
-    player = Player(parsed_args.address, parsed_args.port,
+    player = Player(parsed_args.address, int(parsed_args.port),
                     not parsed_args.no_osc)
     player.show()
     player.resize(1280, 960)
