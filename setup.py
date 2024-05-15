@@ -23,9 +23,9 @@ setup(name='pyoscvideo',
       keywords='osc video player recorder webcam',
       python_requires='>3.7',
       install_requires=[
-          'numpy==1.21.4', 'opencv-python==4.5.4.60', 'PyQt5==5.14.1',
-          'PyQt5-sip==12.9.0', 'pyudev==0.22.0', 'six==1.14.0', 'python-osc==1.8.0',
-          'PyYAML==5.3.1', 'python-vlc==3.0.12118'
+#          'numpy==1.21.4', 'opencv-python==4.5.4.60', 'PyQt5==5.14.1',
+ #         'PyQt5-sip==12.9.0', 'pyudev==0.22.0', 'six==1.14.0', 'python-osc==1.8.0',
+  #        'PyYAML==5.3.1', 'python-vlc==3.0.12118'
           ],
       entry_points={
           'gui_scripts': [
